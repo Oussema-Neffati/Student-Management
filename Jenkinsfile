@@ -22,15 +22,18 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQube') {
-                    sh '''
-                       mvn sonar:sonar \
-                       -Dsonar.projectKey=student-management \
-                       -Dsonar.projectName=student-management \
-                       -DskipTests
-                    '''
-                }
+                withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                    sh """
+                    mvn sonar:sonar \
+                    -Dsonar.projectKey=student-management \
+                    -Dsonar.projectName=student-management \
+                    -Dsonar.login=$SONAR_TOKEN \
+                    -DskipTests
+                    """
             }
         }
+    }
+}
 
         stage('Quality Gate') {
             steps {
