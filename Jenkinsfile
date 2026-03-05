@@ -5,10 +5,6 @@ pipeline {
         IMAGE_NAME = "oussemaneffati/student-management"
     }
 
-    tools {
-        maven 'Maven'
-    }
-
     stages {
 
         stage('Checkout') {
