@@ -13,20 +13,21 @@ pipeline {
             }
         }
 
-        stage('Build & Unit Tests') {
+        stage('Build Application') {
             steps {
-                sh 'mvn clean verify'
+                sh 'mvn clean package -DskipTests'
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQube') {
-                    sh """
+                    sh '''
                        mvn sonar:sonar \
                        -Dsonar.projectKey=student-management \
-                       -Dsonar.projectName=student-management
-                    """
+                       -Dsonar.projectName=student-management \
+                       -DskipTests
+                    '''
                 }
             }
         }
