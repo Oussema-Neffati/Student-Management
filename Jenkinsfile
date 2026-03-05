@@ -5,6 +5,10 @@ pipeline {
         IMAGE_NAME = "oussemaneffati/student-management"
     }
 
+    tools {
+        maven 'Maven'
+    }
+
     stages {
 
         stage('Checkout') {
@@ -13,9 +17,29 @@ pipeline {
             }
         }
 
-        stage('Build Application') {
+        stage('Build & Unit Tests') {
             steps {
-                sh 'mvn clean package -DskipTests'
+                sh 'mvn clean verify'
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh """
+                       mvn sonar:sonar \
+                       -Dsonar.projectKey=student-management \
+                       -Dsonar.projectName=student-management
+                    """
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 2, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
             }
         }
 
