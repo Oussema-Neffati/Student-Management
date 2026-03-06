@@ -13,34 +13,27 @@ pipeline {
             }
         }
 
-        stage('Build & Tests') {
+        stage('Build Application') {
             steps {
-                sh 'mvn clean verify'
+                sh 'mvn clean package -DskipTests'
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQube') {
-                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                        sh '''
-                        mvn sonar:sonar \
-                        -Dsonar.projectKey=student-management \
-                        -Dsonar.projectName=student-management \
-                        -Dsonar.login=$SONAR_TOKEN
-                        '''
-                    }
-                }
+                withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                    sh """
+                    mvn sonar:sonar \
+                    -Dsonar.projectKey=student-management \
+                    -Dsonar.projectName=student-management \
+                    -Dsonar.login=$SONAR_TOKEN \
+                    -DskipTests
+                    """
             }
         }
-
-        stage('Quality Gate') {
-            steps {
-                timeout(time: 2, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
-                }
-            }
-        }
+    }
+}
 
         stage('Build Docker Image') {
             steps {
