@@ -7,7 +7,6 @@ pipeline {
     }
 
     stages {
-
         stage('Checkout') {
             steps {
                 checkout scm
@@ -22,6 +21,7 @@ pipeline {
 
         stage('SonarQube Analysis') {
             steps {
+                // Assure-toi que le nom 'SonarQube' correspond à ta config dans Jenkins
                 withSonarQubeEnv('SonarQube') {
                     withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                         sh '''
@@ -53,36 +53,34 @@ pipeline {
                 }
             }
         }
-    }
 
         stage('Deploy to Kubernetes') {
-                steps {
-                    sh '''
-                        kubectl rollout restart deployment student-management-deployment -n devops
-                        kubectl rollout status deployment student-management-deployment -n devops
-                    '''
-                }
-            }
-
-            stage('Verification') {
-                steps {
-                    sh '''
-                        echo "Checking deployment status..."
-                        kubectl get pods -n devops -l app=student-management
-                        echo "Application is accessible at:"
-                        minikube service student-management-service -n devops --url
-                    '''
-                }
+            steps {
+                sh '''
+                    kubectl rollout restart deployment student-management-deployment -n devops
+                    kubectl rollout status deployment student-management-deployment -n devops
+                '''
             }
         }
 
-        post {
-            success {
-                echo "✅ Deployment successful!"
+        stage('Verification') {
+            steps {
+                sh '''
+                    echo "Checking deployment status..."
+                    kubectl get pods -n devops -l app=student-management
+                    echo "Application is accessible at:"
+                    minikube service student-management-service -n devops --url
+                '''
             }
-            failure {
-                echo "❌ Deployment failed!"
-            }
+        }
+    } // Fin des STAGES
+
+    post {
+        success {
+            echo "✅ Deployment successful!"
+        }
+        failure {
+            echo "❌ Deployment failed!"
         }
     }
 }
