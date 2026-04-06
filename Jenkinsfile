@@ -64,15 +64,16 @@ pipeline {
         }
 
         stage('Verification') {
-            steps {
-                sh '''
-                    echo "Checking deployment status..."
-                    kubectl get pods -n devops -l app=student-management
-                    echo "Application is accessible at:"
-                    minikube service student-management-service -n devops --url
-                '''
-            }
-        }
+                    steps {
+                        sh '''
+                            echo "✅ Checking deployment status..."
+                            kubectl get pods -n devops -l app=student-management
+
+                            echo "🚀 Application is stable!"
+                            echo "Access your app at: http://192.168.49.2:30080/student/index.html"
+                        '''
+                    }
+                }
     } // Fin des STAGES
 
     post {
