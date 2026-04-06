@@ -3,6 +3,7 @@ pipeline {
 
     environment {
         IMAGE_NAME = "oussemaneffati/student-management"
+        KUBECONFIG = "/var/lib/jenkins/.kube/config"
     }
 
     stages {
@@ -50,6 +51,37 @@ pipeline {
                         docker.image("${IMAGE_NAME}:latest").push()
                     }
                 }
+            }
+        }
+    }
+
+        stage('Deploy to Kubernetes') {
+                steps {
+                    sh '''
+                        kubectl rollout restart deployment student-management-deployment -n devops
+                        kubectl rollout status deployment student-management-deployment -n devops
+                    '''
+                }
+            }
+
+            stage('Verification') {
+                steps {
+                    sh '''
+                        echo "Checking deployment status..."
+                        kubectl get pods -n devops -l app=student-management
+                        echo "Application is accessible at:"
+                        minikube service student-management-service -n devops --url
+                    '''
+                }
+            }
+        }
+
+        post {
+            success {
+                echo "✅ Deployment successful!"
+            }
+            failure {
+                echo "❌ Deployment failed!"
             }
         }
     }
