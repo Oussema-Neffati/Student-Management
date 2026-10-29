@@ -56,19 +56,20 @@ pipeline {
             }
         }
 
-        // DevSecOps - COMMIT: Container Security.
+         // DevSecOps - COMMIT: Container Security.
         // The image is scanned BEFORE it is pushed, so a vulnerable image never reaches Docker Hub.
         stage('Container Scan (Trivy)') {
             steps {
                 sh '''
-                    # Full report (HIGH + CRITICAL), kept as a build artifact
-                    trivy image --no-progress --scanners vuln \
+                    # Full report (HIGH + CRITICAL), kept as a build artifact.
+                    # --timeout: the default 5 min is too short when the vulnerability DBs need refreshing on this VM
+                    trivy image --no-progress --scanners vuln --timeout 15m \
                       --severity HIGH,CRITICAL \
                       --format table --output trivy-report.txt \
                       ${IMAGE_NAME}:latest
 
                     # Security gate: fail only on CRITICAL vulnerabilities that have a fix available
-                    trivy image --no-progress --scanners vuln \
+                    trivy image --no-progress --scanners vuln --timeout 15m \
                       --severity CRITICAL --ignore-unfixed \
                       --exit-code 1 \
                       ${IMAGE_NAME}:latest
