@@ -20,6 +20,8 @@
 
     <properties>
         <java.version>21</java.version>
+        <!-- Sécurité : Tomcat 10.1.44 (Spring Boot 3.5.5) a 6 CVE critiques, corrigées à partir de 10.1.58 -->
+        <tomcat.version>10.1.61</tomcat.version>
     </properties>
 
     <dependencies>

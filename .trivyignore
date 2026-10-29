@@ -1,0 +1,7 @@
+# Risk acceptance - reviewed 2026-10-29
+# Fixed only in Spring Framework 7.0.9 (requires Spring Boot 4 migration).
+# Not exploitable here: the app exposes only @RestController JSON endpoints,
+# no XsltView (CVE-2026-47884) and no Server-Sent Events (CVE-2026-47890).
+# Action: migrate to Spring Boot 4 before the expiry date.
+CVE-2026-47884 exp:2027-01-31
+CVE-2026-47890 exp:2027-01-31
