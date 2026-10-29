@@ -1,0 +1,16 @@
+# Tells Prometheus (kube-prometheus-stack, Helm release "prometheus") to scrape the app
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: student-management
+  namespace: devops
+  labels:
+    release: prometheus        # required: the stack only picks up ServiceMonitors with this label
+spec:
+  selector:
+    matchLabels:
+      app: student-management  # must match the LABELS of student-management-service
+  endpoints:
+    - port: http               # must match the port NAME in student-management-service
+      path: /student/actuator/prometheus
+      interval: 30s

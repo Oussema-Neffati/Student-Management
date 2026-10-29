@@ -1,0 +1,11 @@
+# DevSecOps - PRE-COMMIT hook: blocks a commit locally if it contains a secret.
+# Runs the gitleaks binary installed on the machine (same version as the Jenkins stage)
+# on the staged changes only.
+repos:
+  - repo: local
+    hooks:
+      - id: gitleaks
+        name: Detect hardcoded secrets (gitleaks)
+        entry: gitleaks git --pre-commit --staged --redact --verbose
+        language: system
+        pass_filenames: false
