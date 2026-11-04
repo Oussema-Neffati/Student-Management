@@ -2,36 +2,39 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "oussemaneffati/student-management"
-        KUBECONFIG = "/var/lib/jenkins/.kube/config"
-        NOTIFY_EMAIL = "oussema.neffati@esprit.tn"   // who receives the build report
+        IMAGE_NAME        = "oussemaneffati/student-management"
+        KUBECONFIG        = "/var/lib/jenkins/.kube/config"
+        NOTIFY_EMAIL      = "oussema.neffati@esprit.tn"   // who receives the build report
+        ALLOWED_NODEPORTS = "30080"                       // ports allowed to be open outside the cluster (space-separated)
     }
 
     stages {
+        // 1. Download the latest code from GitHub
         stage('Checkout') {
             steps {
                 checkout scm
             }
         }
 
-        // DevSecOps - PRE-COMMIT: same Gitleaks rules as the local pre-commit hook,
-        // enforced on the server so a commit made without the hook is still caught.
+        // 2. PRE-COMMIT practice: search the whole Git history for passwords, tokens and keys
+        //    (same tool as the local pre-commit hook, enforced again on the server)
         stage('Secrets Scan (Gitleaks)') {
             steps {
                 sh '''
-                    gitleaks git . --redact \
+                    gitleaks git . --redact --no-banner \
                       --report-format json --report-path gitleaks-report.json
                 '''
             }
         }
 
+        // 3. Compile the Java code and package it as a .jar with Maven
         stage('Build Application') {
             steps {
                 sh 'mvn clean package -DskipTests'
             }
         }
 
-        // SAST (COMMIT column) - already covered by SonarQube
+        // 4. SAST: SonarQube analyses the source code for bugs, code smells and security hotspots
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQube') {
@@ -48,6 +51,7 @@ pipeline {
             }
         }
 
+        // 5. Package the .jar into a Docker image (Dockerfile: patched Alpine, non-root user)
         stage('Build Docker Image') {
             steps {
                 script {
@@ -56,19 +60,16 @@ pipeline {
             }
         }
 
-         // DevSecOps - COMMIT: Container Security.
-        // The image is scanned BEFORE it is pushed, so a vulnerable image never reaches Docker Hub.
+        // 6. COMMIT practice - Container Security: scan the image BEFORE it is published.
+        //    Report = HIGH + CRITICAL; gate = fail only on CRITICAL vulnerabilities that have a fix.
         stage('Container Scan (Trivy)') {
             steps {
                 sh '''
-                    # Full report (HIGH + CRITICAL), kept as a build artifact.
-                    # --timeout: the default 5 min is too short when the vulnerability DBs need refreshing on this VM
                     trivy image --no-progress --scanners vuln --timeout 15m \
                       --severity HIGH,CRITICAL \
-                      --format table --output trivy-report.txt \
+                      --format json --output trivy-report.json \
                       ${IMAGE_NAME}:latest
 
-                    # Security gate: fail only on CRITICAL vulnerabilities that have a fix available
                     trivy image --no-progress --scanners vuln --timeout 15m \
                       --severity CRITICAL --ignore-unfixed \
                       --exit-code 1 \
@@ -77,6 +78,7 @@ pipeline {
             }
         }
 
+        // 7. Publish the approved image to Docker Hub
         stage('Push Docker Image') {
             steps {
                 script {
@@ -87,6 +89,7 @@ pipeline {
             }
         }
 
+        // 8. Rolling update on Kubernetes: pods are replaced one by one, no downtime
         stage('Deploy to Kubernetes') {
             steps {
                 sh '''
@@ -96,10 +99,10 @@ pipeline {
             }
         }
 
+        // 9. Smoke test: the new version must answer on its health endpoint
         stage('Verification') {
             steps {
                 sh '''
-                    echo "Checking deployment status..."
                     kubectl get pods -n devops -l app=student-management
                     NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
                     curl -sf --retry 10 --retry-delay 10 --retry-all-errors \
@@ -108,22 +111,20 @@ pipeline {
             }
         }
 
-                // DevSecOps - network security: scan the deployed app from the network, like an attacker would
+        // 10. Network security: scan the DEPLOYED app from the network, like an attacker would.
+        //     Report = HTTP security headers, accepted methods, page title.
+        //     Gate   = fail if a NodePort outside the allowlist is open.
         stage('Network Scan (Nmap)') {
-            environment {
-                ALLOWED_NODEPORTS = "30080"   // space-separated list of NodePorts allowed to be open
-            }
             steps {
                 sh '''
                     NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
 
-                    # 1. Report: service/version detection + HTTP security checks on the app port
-                    nmap -sT -sV -Pn -p 30080 \
-                      --script http-headers,http-methods,http-title \
-                      --script-args http-methods.url-path=/student/ \
-                      -oN nmap-app-report.txt "$NODE_IP"
+                    # "+" forces the HTTP scripts to run even though Nmap does not recognise port 30080 as HTTP
+                    nmap -sT -Pn -p 30080 \
+                      --script "+http-headers,+http-methods,+http-title" \
+                      --script-args "http-headers.path=/student/actuator/health,http-methods.url-path=/student/,http-title.url=/student/swagger-ui/index.html" \
+                      -oX nmap-app-report.xml "$NODE_IP"
 
-                    # 2. Gate: only allowlisted NodePorts may be exposed outside the cluster
                     nmap -sT -Pn -p 30000-32767 --open -oG nmap-nodeports.gnmap "$NODE_IP"
                     OPEN=$(grep -oE '[0-9]+/open' nmap-nodeports.gnmap | cut -d/ -f1 | sort -n | tr '\\n' ' ')
                     echo "Open NodePorts: $OPEN"
@@ -138,17 +139,13 @@ pipeline {
             }
         }
 
-        // Monitoring: Prometheus scrapes the app's /actuator/prometheus endpoint, Grafana shows it
+        // 11. Start Prometheus/Grafana if paused, and register the app as a metrics target
         stage('Monitoring') {
             steps {
                 sh '''
-                    # Bring the Prometheus/Grafana stack up (it can be paused to save RAM between sessions);
-                    # the operator then recreates Prometheus and Alertmanager by itself
                     kubectl scale deployment --all -n monitoring --replicas=1
                     kubectl rollout status deployment prometheus-kube-prometheus-operator -n monitoring --timeout=300s
                     kubectl rollout status deployment prometheus-grafana -n monitoring --timeout=300s
-
-                    # Register the application as a Prometheus scrape target
                     kubectl apply -f k8s/servicemonitor.yaml
                     kubectl get servicemonitor -n devops
                 '''
@@ -156,29 +153,21 @@ pipeline {
         }
     }
 
+    // 12. Always runs, success or failure: build the readable security report, keep it, email it
     post {
         always {
-                        archiveArtifacts artifacts: 'gitleaks-report.json, trivy-report.txt, nmap-app-report.txt, nmap-nodeports.gnmap', allowEmptyArchive: true
-
-            // E-mail notification: sent on success AND failure, with the security reports attached
+            withEnv(["BUILD_RESULT=${currentBuild.currentResult}"]) {
+                sh 'python3 security/generate_report.py || true'
+            }
+            archiveArtifacts artifacts: 'security-report.html, gitleaks-report.json, trivy-report.json, nmap-app-report.xml, nmap-nodeports.gnmap',
+                             allowEmptyArchive: true
             emailext(
                 to: "${NOTIFY_EMAIL}",
                 subject: "[Jenkins] ${currentBuild.currentResult}: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                 mimeType: 'text/html',
-                body: """
-                    <h2>${env.JOB_NAME} - build #${env.BUILD_NUMBER}: ${currentBuild.currentResult}</h2>
-                    <p>Duration: ${currentBuild.durationString}</p>
-                    <p>Console output: <a href="${env.BUILD_URL}console">${env.BUILD_URL}console</a></p>
-                    <p>Attached: Gitleaks (secrets) and Trivy (container vulnerabilities) reports.</p>
-                """,
-                attachmentsPattern: 'gitleaks-report.json, trivy-report.txt, nmap-app-report.txt'
+                body: '${FILE,path="security-report.html"}',
+                attachmentsPattern: 'security-report.html'
             )
-        }
-        success {
-            echo "Deployment successful!"
-        }
-        failure {
-            echo "Pipeline failed - check the security reports in the build artifacts."
         }
     }
 }
