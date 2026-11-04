@@ -108,6 +108,36 @@ pipeline {
             }
         }
 
+                // DevSecOps - network security: scan the deployed app from the network, like an attacker would
+        stage('Network Scan (Nmap)') {
+            environment {
+                ALLOWED_NODEPORTS = "30080"   // space-separated list of NodePorts allowed to be open
+            }
+            steps {
+                sh '''
+                    NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}')
+
+                    # 1. Report: service/version detection + HTTP security checks on the app port
+                    nmap -sT -sV -Pn -p 30080 \
+                      --script http-headers,http-methods,http-title \
+                      --script-args http-methods.url-path=/student/ \
+                      -oN nmap-app-report.txt "$NODE_IP"
+
+                    # 2. Gate: only allowlisted NodePorts may be exposed outside the cluster
+                    nmap -sT -Pn -p 30000-32767 --open -oG nmap-nodeports.gnmap "$NODE_IP"
+                    OPEN=$(grep -oE '[0-9]+/open' nmap-nodeports.gnmap | cut -d/ -f1 | sort -n | tr '\\n' ' ')
+                    echo "Open NodePorts: $OPEN"
+                    for p in $OPEN; do
+                      case " $ALLOWED_NODEPORTS " in
+                        *" $p "*) ;;
+                        *) echo "UNEXPECTED open port: $p - not in the allowlist"; exit 1 ;;
+                      esac
+                    done
+                    echo "Network exposure matches the allowlist."
+                '''
+            }
+        }
+
         // Monitoring: Prometheus scrapes the app's /actuator/prometheus endpoint, Grafana shows it
         stage('Monitoring') {
             steps {
@@ -128,7 +158,7 @@ pipeline {
 
     post {
         always {
-            archiveArtifacts artifacts: 'gitleaks-report.json, trivy-report.txt', allowEmptyArchive: true
+                        archiveArtifacts artifacts: 'gitleaks-report.json, trivy-report.txt, nmap-app-report.txt, nmap-nodeports.gnmap', allowEmptyArchive: true
 
             // E-mail notification: sent on success AND failure, with the security reports attached
             emailext(
@@ -141,7 +171,7 @@ pipeline {
                     <p>Console output: <a href="${env.BUILD_URL}console">${env.BUILD_URL}console</a></p>
                     <p>Attached: Gitleaks (secrets) and Trivy (container vulnerabilities) reports.</p>
                 """,
-                attachmentsPattern: 'gitleaks-report.json, trivy-report.txt'
+                attachmentsPattern: 'gitleaks-report.json, trivy-report.txt, nmap-app-report.txt'
             )
         }
         success {
